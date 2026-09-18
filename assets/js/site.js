@@ -29,6 +29,9 @@
   /* Reveal on scroll */
   var reveals = d.querySelectorAll(".reveal");
   if (reveals.length && !reduce && "IntersectionObserver" in window) {
+    reveals.forEach(function (el) {
+      if (el.getBoundingClientRect().top < window.innerHeight) el.classList.add("in");
+    });
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
         if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
