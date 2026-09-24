@@ -21,9 +21,13 @@ var CONFIG = {
   timezone: "Europe/London",
   maxGuests: 8,            // bigger groups are told to email
   maxDaysAhead: 90,
-  // Opening hours per weekday (0 = Sunday). Last booking is 45 min before close.
+  // Opening hours per weekday (0 = Sunday), in hours. MUST match HOURS in assets/js/site.js.
   hours: { 0: null, 1: [7.5, 18], 2: [7.5, 18], 3: [7.5, 18], 4: [7.5, 18], 5: [7.5, 18], 6: [7.5, 17] },
-  lastBookingBeforeCloseMin: 45,
+  lastBookingBeforeCloseMin: 60, // last table starts 1 hour before close
+  slotStepMin: 15,               // bookings only on :00 :15 :30 :45
+  minNoticeMin: 30,              // no bookings starting in the next 30 minutes
+  // Extra closed days (bank holidays, private events), as "yyyy-MM-dd".
+  closedDates: ["2026-12-25", "2026-12-26", "2027-01-01"],
   // Abuse limits
   maxPerContactPerDay: 3,  // same email or phone
   maxPerDay: 60            // all bookings; protects the Gmail send quota (~100/day)
@@ -45,7 +49,7 @@ function doPost(e) {
     if (limit) return fail(limit);
 
     var cal = getCalendar();
-    var end = new Date(b.start.getTime() + CONFIG.slotMinutes * 60000);
+    var end = b.end; // never later than closing time
     var taken = cal.getEvents(b.start, end).filter(function (ev) {
       return ev.getTitle().indexOf("Booking:") === 0;
     }).length;
@@ -121,21 +125,29 @@ function validate(p) {
   if (!(guests >= 1 && guests <= CONFIG.maxGuests)) return { error: "Please choose the number of guests" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.date)) || !/^\d{2}:\d{2}$/.test(String(p.time))) return { error: "Please pick a date and time" };
 
-  var start = new Date(p.date + "T" + p.time + ":00");
-  if (isNaN(start.getTime())) return { error: "Please pick a date and time" };
+  var hm = p.time.split(":"), hh = parseInt(hm[0], 10), mm = parseInt(hm[1], 10);
+  if (hh > 23 || mm > 59 || mm % CONFIG.slotStepMin !== 0) return { error: "Please pick a time from the list" };
+  // Parse as London wall-clock time regardless of the script's own time zone setting.
+  var start = Utilities.parseDate(p.date + " " + p.time, CONFIG.timezone, "yyyy-MM-dd HH:mm");
+  if (!start || isNaN(start.getTime())) return { error: "Please pick a date and time" };
+  // Reject impossible dates like 2026-02-31 that roll over to another day.
+  if (Utilities.formatDate(start, CONFIG.timezone, "yyyy-MM-dd HH:mm") !== p.date + " " + p.time) return { error: "Please pick a date and time" };
+  if (CONFIG.closedDates.indexOf(p.date) !== -1) return { error: "We are closed that day" };
   var now = Date.now();
-  if (start.getTime() < now + 30 * 60000) return { error: "Please pick a time at least 30 minutes from now" };
+  if (start.getTime() < now + CONFIG.minNoticeMin * 60000) return { error: "Please pick a time at least " + CONFIG.minNoticeMin + " minutes from now" };
   if (start.getTime() > now + CONFIG.maxDaysAhead * 86400000) return { error: "We take bookings up to " + CONFIG.maxDaysAhead + " days ahead" };
 
   var day = parseInt(Utilities.formatDate(start, CONFIG.timezone, "u"), 10) % 7; // u: 1=Mon..7=Sun
   var hrs = CONFIG.hours[day];
-  var hm = p.time.split(":"), t = parseInt(hm[0], 10) + parseInt(hm[1], 10) / 60;
+  var t = hh + mm / 60;
   if (!hrs) return { error: "We are closed that day" };
   if (t < hrs[0] || t > hrs[1] - CONFIG.lastBookingBeforeCloseMin / 60) return { error: "That time is outside our opening hours" };
+  var closeAt = Utilities.parseDate(p.date + " " + fmtHM(hrs[1]), CONFIG.timezone, "yyyy-MM-dd HH:mm");
+  var end = new Date(Math.min(start.getTime() + CONFIG.slotMinutes * 60000, closeAt.getTime()));
 
   return {
     name: name, firstName: name.split(" ")[0], email: email, phone: phone, guests: guests,
-    notes: clean(p.notes, 300), start: start
+    notes: clean(p.notes, 300), start: start, end: end
   };
 }
 
@@ -175,6 +187,7 @@ function notifyWhatsApp(text) {
   });
 }
 
+function fmtHM(h) { var H = Math.floor(h), M = Math.round((h - H) * 60); return (H < 10 ? "0" : "") + H + ":" + (M < 10 ? "0" : "") + M; }
 function safe(fn) { try { fn(); } catch (err) { console.error(String(err && err.stack || err)); } }
 function fail(msg) { return out({ success: false, error: msg }); }
 function doGet() { return out({ ok: true, service: "Aroma Class bookings" }); }

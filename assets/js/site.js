@@ -44,6 +44,7 @@
 
   /* Opening hours: live status in Europe/London
      0 = Sunday. Times are decimal hours. Sunday closed. */
+  /* MUST match CONFIG.hours in integrations/google-calendar/Code.gs */
   var HOURS = { 1: [7.5, 18], 2: [7.5, 18], 3: [7.5, 18], 4: [7.5, 18], 5: [7.5, 18], 6: [7.5, 17], 0: null };
   var DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -149,20 +150,34 @@
   if (bf) {
     var dateEl = bf.querySelector("[name=date]"), timeEl = bf.querySelector("[name=time]");
     var bmsg = bf.querySelector(".form-msg"), bbtn = bf.querySelector("button[type=submit]");
-    var t0 = new Date(); t0.setMinutes(t0.getMinutes() - t0.getTimezoneOffset());
-    dateEl.min = t0.toISOString().slice(0, 10);
+    var LAST_BEFORE_CLOSE = 1, NOTICE_MIN = 30, DAYS_AHEAD = 90;
+    var CLOSED_DATES = ["2026-12-25", "2026-12-26", "2027-01-01"];
+    /* Today's date in London, whatever the visitor's own time zone */
+    var todayLondon = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
+    var maxD = new Date(todayLondon + "T12:00:00"); maxD.setDate(maxD.getDate() + DAYS_AHEAD);
+    dateEl.min = todayLondon;
+    dateEl.max = maxD.toISOString().slice(0, 10);
     var pad = function (n) { return (n < 10 ? "0" : "") + n; };
     function fillTimes() {
       var dt = dateEl.value ? new Date(dateEl.value + "T12:00:00") : null;
       var hrs = dt && !isNaN(dt) ? HOURS[dt.getDay()] : undefined;
+      if (dt && CLOSED_DATES.indexOf(dateEl.value) !== -1) hrs = null;
+      if (dt && (dateEl.value < dateEl.min || dateEl.value > dateEl.max)) { timeEl.innerHTML = ""; timeEl.disabled = true; timeEl.add(new Option("Pick a date in the next 90 days", "")); return; }
+      var earliest = -1;
+      if (dateEl.value === todayLondon) { var n = londonNow(); earliest = n.t + NOTICE_MIN / 60; }
       timeEl.innerHTML = "";
       if (!dt || isNaN(dt)) { timeEl.disabled = true; timeEl.add(new Option("Pick a date first", "")); return; }
-      if (!hrs) { timeEl.disabled = true; timeEl.add(new Option("We are closed on Sundays", "")); return; }
-      timeEl.disabled = false; timeEl.add(new Option("Choose", ""));
-      for (var t = hrs[0]; t <= hrs[1] - 0.75; t += 0.25) {
+      if (!hrs) { timeEl.disabled = true; timeEl.add(new Option(dt.getDay() === 0 ? "We are closed on Sundays" : "We are closed that day", "")); return; }
+      var count = 0;
+      timeEl.add(new Option("Choose", ""));
+      for (var t = hrs[0]; t <= hrs[1] - LAST_BEFORE_CLOSE + 1e-9; t += 0.25) {
+        if (t < earliest) continue;
+        count++;
         var h = Math.floor(t), m = Math.round((t - h) * 60);
         timeEl.add(new Option(fmt(t), pad(h) + ":" + pad(m)));
       }
+      timeEl.disabled = count === 0;
+      if (count === 0) { timeEl.innerHTML = ""; timeEl.add(new Option("No times left today", "")); }
     }
     dateEl.addEventListener("change", fillTimes); fillTimes();
     bf.addEventListener("submit", function (e) {
