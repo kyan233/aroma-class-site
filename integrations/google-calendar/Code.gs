@@ -19,7 +19,13 @@ var CONFIG = {
   maxTablesPerSlot: 6,   // bookings allowed to overlap at the same time
   slotMinutes: 90,       // how long a table is held in the calendar
   autoConfirm: true,     // true: customer is told it is booked. false: told it is a request.
-  timezone: "Europe/London"
+  timezone: "Europe/London",
+  // WhatsApp alert to the owner via CallMeBot (free, one recipient, unofficial).
+  // Dom registers once: on WhatsApp, message the CallMeBot number shown at
+  // https://www.callmebot.com/blog/free-api-whatsapp-messages/ with the text
+  // "I allow callmebot to send me messages" and paste the API key he gets back here.
+  // For an official channel later, swap notifyWhatsApp for the Meta WhatsApp Cloud API.
+  whatsapp: { phone: "", apikey: "" }  // phone in international format, e.g. "+447700900123"
 };
 
 function doPost(e) {
@@ -65,10 +71,23 @@ function doPost(e) {
       body: greeting + line + "\n\nAroma Class, Dukes Court, Duke Street, Woking GU21 5BH.\n" +
             "If your plans change, reply to this email.\n\nSee you soon."
     });
+    notifyWhatsApp("New booking\n" + name + " x" + guests + "\n" + when + "\nPhone " + p.phone +
+                   (notes ? "\nNotes: " + notes : "") + "\nEmail " + p.email);
     return out({ success: true, confirmed: CONFIG.autoConfirm, eventId: ev.getId() });
   } catch (err) {
     return out({ success: false, error: String(err) });
   }
+}
+
+/** WhatsApp alert. Never blocks the booking: any failure is logged and ignored. */
+function notifyWhatsApp(text) {
+  var w = CONFIG.whatsapp;
+  if (!w || !w.phone || !w.apikey) return;
+  try {
+    var url = "https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent(w.phone) +
+              "&apikey=" + encodeURIComponent(w.apikey) + "&text=" + encodeURIComponent(text);
+    UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  } catch (err) { Logger.log("WhatsApp alert failed: " + err); }
 }
 
 function doGet() { return out({ ok: true, service: "Aroma Class bookings" }); }
