@@ -150,7 +150,7 @@
   if (bf) {
     var dateEl = bf.querySelector("[name=date]"), timeEl = bf.querySelector("[name=time]");
     var bmsg = bf.querySelector(".form-msg"), bbtn = bf.querySelector("button[type=submit]");
-    var LAST_BEFORE_CLOSE = 1, NOTICE_MIN = 30, DAYS_AHEAD = 90, BOOK_FROM = 12;
+    var LAST_BEFORE_CLOSE = 0.5, NOTICE_MIN = 30, DAYS_AHEAD = 90, BOOK_FROM = 12;
     var CLOSED_DATES = ["2026-12-25", "2026-12-26", "2027-01-01"];
     /* Today's date in London, whatever the visitor's own time zone */
     var todayLondon = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());

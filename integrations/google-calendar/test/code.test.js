@@ -89,7 +89,7 @@ t("Sunday, out of hours, past and far future rejected", () => {
   const e = makeEnv();
   assert.strictEqual(post(e, good({ date: nextSunday() })).success, false);
   assert.strictEqual(post(e, good({ time: "03:00" })).success, false);
-  assert.strictEqual(post(e, good({ time: "18:15" })).success, false);
+  assert.strictEqual(post(e, good({ time: "18:45" })).success, false);
   assert.strictEqual(post(e, good({ time: "09:00" })).success, false);
   assert.strictEqual(post(e, good({ date: "2020-01-01" })).success, false);
   assert.strictEqual(post(e, good({ date: "2030-01-01" })).success, false);
@@ -129,7 +129,7 @@ t("every 15-min slot on 7 consecutive days: accepted only inside hours, event ne
     const dow = new Date(date + "T12:00:00Z").getUTCDay(), hrs = HOURS[dow];
     for (let h = 0; h < 24; h++) for (const m of [0, 15, 30, 45]) {
       const time = String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"), tt = h + m / 60;
-      const shouldAccept = !!hrs && tt >= Math.max(hrs[0], BOOK_FROM) && tt <= hrs[1] - 1;
+      const shouldAccept = !!hrs && tt >= Math.max(hrs[0], BOOK_FROM) && tt <= hrs[1] - 0.5;
       const e = makeEnv(); const r = post(e, good({ date, time }));
       assert.strictEqual(r.success, shouldAccept, `${date} (dow ${dow}) ${time}: expected ${shouldAccept}, got ${JSON.stringify(r)}`);
       if (r.success) {

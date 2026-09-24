@@ -24,7 +24,7 @@ var CONFIG = {
   // Opening hours per weekday (0 = Sunday), in hours. MUST match HOURS in assets/js/site.js.
   hours: { 0: null, 1: [7.5, 19], 2: [7.5, 19], 3: [7.5, 19], 4: [7.5, 19], 5: [7.5, 19], 6: [7.5, 19] },
   bookFrom: 12,                  // tables bookable from 12:00, even though we open earlier
-  lastBookingBeforeCloseMin: 60, // last table starts 1 hour before close
+  lastBookingBeforeCloseMin: 30, // last table starts 6:30pm, 30 min before close
   slotStepMin: 15,               // bookings only on :00 :15 :30 :45
   minNoticeMin: 30,              // no bookings starting in the next 30 minutes
   // Extra closed days (bank holidays, private events), as "yyyy-MM-dd".
@@ -142,7 +142,7 @@ function validate(p) {
   var hrs = CONFIG.hours[day];
   var t = hh + mm / 60;
   if (!hrs) return { error: "We are closed that day" };
-  if (t < Math.max(hrs[0], CONFIG.bookFrom) || t > hrs[1] - CONFIG.lastBookingBeforeCloseMin / 60) return { error: "We take bookings from 12pm to 6pm" };
+  if (t < Math.max(hrs[0], CONFIG.bookFrom) || t > hrs[1] - CONFIG.lastBookingBeforeCloseMin / 60) return { error: "We take bookings from 12pm to 6:30pm" };
   var closeAt = Utilities.parseDate(p.date + " " + fmtHM(hrs[1]), CONFIG.timezone, "yyyy-MM-dd HH:mm");
   var end = new Date(Math.min(start.getTime() + CONFIG.slotMinutes * 60000, closeAt.getTime()));
 
