@@ -194,8 +194,14 @@
     }
     var capToken = function () { return (SITEKEY && window.turnstile && capId !== null) ? (window.turnstile.getResponse(capId) || "") : ""; };
     var capReset = function () { if (SITEKEY && window.turnstile && capId !== null) window.turnstile.reset(capId); };
+    var busy = false, btnLabel = bbtn.textContent;
+    var setBusy = function (on, label) {
+      busy = on; bbtn.disabled = on; bbtn.setAttribute("aria-busy", on ? "true" : "false");
+      bbtn.textContent = on ? (label || "Booking your table") : btnLabel;
+    };
     bf.addEventListener("submit", function (e) {
       e.preventDefault();
+      if (busy) return;
       if (bf.querySelector(".hp").value) return;
       var bad = [];
       bf.querySelectorAll("[required]").forEach(function (el) {
@@ -206,17 +212,25 @@
       var f = {};
       ["name", "guests", "date", "time", "email", "phone", "notes"].forEach(function (k) { f[k] = bf.querySelector("[name=" + k + "]").value.trim(); });
       f.website = bf.querySelector("[name=website]").value;
-      f.turnstile = capToken();
-      if (SITEKEY && !f.turnstile) { bmsg.classList.add("error"); bmsg.textContent = "One moment, checking you are not a robot. Try again in a few seconds."; return; }
-      bmsg.classList.remove("error"); bmsg.textContent = "Sending your request."; bbtn.disabled = true;
+      bmsg.classList.remove("error"); bmsg.textContent = "";
+      var waited = 0;
+      var go = function () {
+        f.turnstile = capToken();
+        if (SITEKEY && !f.turnstile && waited < 10000) { setBusy(true, "Checking you are not a robot"); waited += 250; setTimeout(go, 250); return; }
+        if (SITEKEY && !f.turnstile) { setBusy(false); bmsg.classList.add("error"); bmsg.textContent = "We could not check you are not a robot. Tick the box above, then press Request booking again."; return; }
+        send();
+      };
+      var send = function () {
+      setBusy(true);
       var ENDPOINT = (d.body.getAttribute("data-booking-endpoint") || "").trim();
       var onSent = function (viaMail) {
-        bbtn.disabled = false;
+        setBusy(false);
         if (viaMail) { bmsg.textContent = "Opening your email app with the request filled in. Press send and we will confirm."; return; }
-        bf.hidden = true; var done = d.querySelector(".booking-done"); done.hidden = false; done.classList.add("in"); done.scrollIntoView({ block: "center" });
+        try { sessionStorage.setItem("aroma-booking", JSON.stringify({ name: f.name, guests: f.guests, date: f.date, time: f.time, email: f.email })); } catch (err) {}
+        window.location.href = "booking-confirmed.html";
       };
       var onFail = function () {
-        bbtn.disabled = false; bmsg.classList.add("error");
+        setBusy(false); capReset(); bmsg.classList.add("error");
         bmsg.textContent = "That did not send. Please email info@aromaclassitalian.com with your details.";
       };
       if (ENDPOINT) {
@@ -225,14 +239,31 @@
           .then(function (r) { return r.json(); })
           .then(function (j) {
             if (j.success) { onSent(false); return; }
-            if (j.full) { bbtn.disabled = false; bmsg.classList.add("error"); bmsg.textContent = "That time is full. Please pick another time."; timeEl.focus(); return; }
+            if (j.full) { setBusy(false); bmsg.classList.add("error"); bmsg.textContent = "That time is full. Please pick another time."; timeEl.focus(); return; }
             capReset();
-            if (j.error && j.error !== "Something went wrong") { bbtn.disabled = false; bmsg.classList.add("error"); bmsg.textContent = j.error; return; }
+            if (j.error && j.error !== "Something went wrong") { setBusy(false); bmsg.classList.add("error"); bmsg.textContent = j.error; return; }
             onFail();
           }).catch(onFail);
         return;
       }
       sendForm("Booking request: " + f.name + ", " + f.guests + " on " + f.date + " at " + f.time, f, onSent, onFail);
+      };
+      go();
     });
+  }
+
+  /* Booking confirmed page: details come from sessionStorage, never the URL */
+  var cd = d.querySelector("[data-confirm-details]");
+  if (cd) {
+    var bk = null; try { bk = JSON.parse(sessionStorage.getItem("aroma-booking") || "null"); } catch (err) {}
+    if (bk) {
+      var nice = new Date(bk.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+      var hm = String(bk.time).split(":"), hh = +hm[0], tm = ((hh % 12) || 12) + ":" + hm[1] + (hh >= 12 ? "pm" : "am");
+      var vals = { name: bk.name, guests: bk.guests + (bk.guests == 1 ? " guest" : " guests"), date: nice, time: tm, email: bk.email };
+      d.querySelectorAll("[data-f]").forEach(function (el) { var k = el.getAttribute("data-f"); if (vals[k]) el.textContent = vals[k]; });
+      cd.hidden = false;
+      var line = d.querySelector("[data-confirm-line]");
+      if (line) line.textContent = "Table for " + vals.guests.replace(" guests", "").replace(" guest", "") + " on " + nice + " at " + tm + ". See you then.";
+    }
   }
 })();
