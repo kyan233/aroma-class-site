@@ -120,7 +120,7 @@ ul{list-style:none}
 .menu-open .mobile-menu{opacity:1;visibility:visible;transition:opacity .35s var(--ease)}
 .mobile-menu a{display:block;padding:.35em 0;transform:translateY(12px);opacity:0;transition:transform .5s var(--ease),opacity .5s var(--ease)}
 .menu-open .mobile-menu a{transform:none;opacity:1}
-.mobile-menu a:nth-child(2){transition-delay:.05s}.mobile-menu a:nth-child(3){transition-delay:.1s}.mobile-menu a:nth-child(4){transition-delay:.15s}.mobile-menu a:nth-child(5){transition-delay:.2s}
+.mobile-menu a:nth-child(2){transition-delay:.05s}.mobile-menu a:nth-child(3){transition-delay:.1s}.mobile-menu a:nth-child(4){transition-delay:.15s}.mobile-menu a:nth-child(5){transition-delay:.2s}.mobile-menu a:nth-child(6){transition-delay:.25s}
 .mobile-menu .display{font-size:clamp(2rem,9vw,3.4rem)}
 .mobile-menu .meta{margin-top:auto;padding-top:24px;border-top:1px solid var(--line);color:var(--ink-3);font-size:1rem}
 .menu-open{overflow:hidden}
@@ -289,4 +289,26 @@ ul{list-style:none}
   *,*::before,*::after{animation:none!important;transition-duration:.01ms!important}
   .reveal{opacity:1;transform:none}
   .hero-media img{transform:none}
+}
+
+/* ---------- booking ---------- */
+.booking-grid{display:grid;grid-template-columns:7fr 5fr;gap:clamp(32px,6vw,96px);align-items:start}
+.booking,.booking-done{color-scheme:dark}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:20px 24px}
+.f{display:grid;gap:8px}
+.f-wide{grid-column:1/-1}
+.f label{font-family:var(--display);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2)}
+.f label .opt{color:var(--ink-3);letter-spacing:.1em;margin-left:6px}
+.f input,.f select,.f textarea{width:100%;background:rgba(241,232,218,.04);border:1px solid var(--line-strong);color:var(--ink);font:inherit;font-size:1.1rem;padding:.7em .9em;border-radius:0;min-width:0}
+.f input::placeholder,.f textarea::placeholder{color:var(--ink-3)}
+.f input:focus,.f select:focus,.f textarea:focus{outline:none;border-color:var(--gold)}
+.f select:disabled{color:var(--ink-3)}
+.f .invalid{border-color:#e0907f}
+.f textarea{resize:vertical}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.booking .form-msg{margin:16px 0 12px}
+.booking-aside .hours-rows{margin-top:24px}
+.field input{border-radius:0}
+@media (max-width:860px){
+  .booking-grid,.fields{grid-template-columns:1fr}
 }

@@ -1,0 +1,53 @@
+<!-- title: Book a Table | Aroma Class, Woking -->
+<!-- desc: Book a table at Aroma Class, the Italian deli and wine bar at Dukes Court, Woking. Breakfast, lunch and aperitivo, Monday to Saturday. -->
+<!-- active: book -->
+<!-- header: solid -->
+<section class="page-head">
+  <div class="wrap">
+    <h1 class="display display-xl">Book a table</h1>
+    <p class="lede">Tell us when and how many. We confirm by email or phone, usually within the hour during opening times.</p>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="wrap booking-grid">
+    <form class="booking reveal" data-booking novalidate>
+      <div class="fields">
+        <div class="f"><label for="bk-name">Name</label><input id="bk-name" name="name" type="text" autocomplete="name" required></div>
+        <div class="f"><label for="bk-guests">Guests</label>
+          <select id="bk-guests" name="guests" required>
+            <option value="">Choose</option>
+            <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option>
+            <option value="9+">9 or more</option>
+          </select></div>
+        <div class="f"><label for="bk-date">Date</label><input id="bk-date" name="date" type="date" required></div>
+        <div class="f"><label for="bk-time">Time</label><select id="bk-time" name="time" required><option value="">Pick a date first</option></select></div>
+        <div class="f"><label for="bk-email">Email</label><input id="bk-email" name="email" type="email" autocomplete="email" required></div>
+        <div class="f"><label for="bk-phone">Phone</label><input id="bk-phone" name="phone" type="tel" autocomplete="tel" required></div>
+        <div class="f f-wide"><label for="bk-notes">Anything we should know <span class="opt">optional</span></label><textarea id="bk-notes" name="notes" rows="3" placeholder="Birthday, pushchair, allergies, a quiet corner"></textarea></div>
+        <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+      </div>
+      <p class="form-msg" aria-live="polite"></p>
+      <button class="btn btn-gold" type="submit">Request booking</button>
+      <p class="small" style="margin-top:14px">Your table is not confirmed until you hear back from us.</p>
+    </form>
+    <div class="booking-done reveal" hidden>
+      <h2 class="display display-md">Request sent</h2>
+      <p class="prose" style="margin-top:14px">Thank you. We will confirm by email or phone, usually within the hour during opening times.</p>
+      <a class="link" href="menu.html" style="margin-top:24px">See the menu <span class="arr" aria-hidden="true">&rarr;</span></a>
+    </div>
+    <aside class="booking-aside reveal reveal-d1">
+      <p class="status" data-open-status style="margin-top:0"><span class="dot" aria-hidden="true"></span><span data-open-text>Monday to Saturday</span></p>
+      <ul class="hours-rows">
+        <li data-days="1,2,3,4,5"><span>Monday to Friday</span><time>7:30am to 6pm</time></li>
+        <li data-days="6"><span>Saturday</span><time>7:30am to 5pm</time></li>
+        <li data-days="0"><span>Sunday</span><span class="closed">Closed</span></li>
+      </ul>
+      <p class="prose" style="margin-top:24px">Groups of nine or more, or anything for today, email us directly and we will sort it.</p>
+      <ul class="contact-list" style="margin-top:16px">
+        <li><a href="mailto:info@aromaclassitalian.com">info@aromaclassitalian.com</a></li>
+        <li><a href="opening-hours.html">Hours &amp; directions</a></li>
+      </ul>
+    </aside>
+  </div>
+</section>

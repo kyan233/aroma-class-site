@@ -107,10 +107,10 @@
         msg.classList.add("error"); input.focus(); return;
       }
       msg.classList.remove("error");
-      msg.textContent = "Opening your email app so you can send us the sign-up.";
-      var body = "Please add " + v + " to the Aroma Class newsletter.";
-      window.location.href = "mailto:info@aromaclassitalian.com?subject=" +
-        encodeURIComponent("Newsletter sign up") + "&body=" + encodeURIComponent(body);
+      sendForm("Newsletter sign up", { email: v }, function (viaMail) {
+        msg.textContent = viaMail ? "Opening your email app so you can send us the sign-up." : "You are on the list. First email when the specials change.";
+        if (!viaMail) input.value = "";
+      }, function () { msg.classList.add("error"); msg.textContent = "That did not send. Email info@aromaclassitalian.com and we will add you."; });
     });
   }
 
@@ -127,6 +127,64 @@
     links.forEach(function (a) {
       var sec = d.getElementById(a.getAttribute("href").slice(1));
       if (sec) secIO.observe(sec);
+    });
+  }
+
+  /* Forms: send through Web3Forms when <body data-form-key> is set, otherwise hand off to the email app */
+  var FORM_KEY = (d.body.getAttribute("data-form-key") || "").trim();
+  function sendForm(subject, fields, onDone, onFail) {
+    var body = Object.keys(fields).map(function (k) { return k + ": " + fields[k]; }).join("\n");
+    if (!FORM_KEY) {
+      window.location.href = "mailto:info@aromaclassitalian.com?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+      onDone(true); return;
+    }
+    var payload = Object.assign({ access_key: FORM_KEY, subject: subject, from_name: "Aroma Class website" }, fields);
+    fetch("https://api.web3forms.com/submit", {
+      method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (j) { j.success ? onDone(false) : onFail(); }).catch(onFail);
+  }
+
+  /* Booking request */
+  var bf = d.querySelector("[data-booking]");
+  if (bf) {
+    var dateEl = bf.querySelector("[name=date]"), timeEl = bf.querySelector("[name=time]");
+    var bmsg = bf.querySelector(".form-msg"), bbtn = bf.querySelector("button[type=submit]");
+    var t0 = new Date(); t0.setMinutes(t0.getMinutes() - t0.getTimezoneOffset());
+    dateEl.min = t0.toISOString().slice(0, 10);
+    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    function fillTimes() {
+      var dt = dateEl.value ? new Date(dateEl.value + "T12:00:00") : null;
+      var hrs = dt && !isNaN(dt) ? HOURS[dt.getDay()] : undefined;
+      timeEl.innerHTML = "";
+      if (!dt || isNaN(dt)) { timeEl.disabled = true; timeEl.add(new Option("Pick a date first", "")); return; }
+      if (!hrs) { timeEl.disabled = true; timeEl.add(new Option("We are closed on Sundays", "")); return; }
+      timeEl.disabled = false; timeEl.add(new Option("Choose", ""));
+      for (var t = hrs[0]; t <= hrs[1] - 0.75; t += 0.25) {
+        var h = Math.floor(t), m = Math.round((t - h) * 60);
+        timeEl.add(new Option(fmt(t), pad(h) + ":" + pad(m)));
+      }
+    }
+    dateEl.addEventListener("change", fillTimes); fillTimes();
+    bf.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (bf.querySelector(".hp").value) return;
+      var bad = [];
+      bf.querySelectorAll("[required]").forEach(function (el) {
+        var ok = el.value.trim() !== "" && !(el.type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(el.value.trim()));
+        el.classList.toggle("invalid", !ok); if (!ok) bad.push(el);
+      });
+      if (bad.length) { bmsg.classList.add("error"); bmsg.textContent = "Please fill in the highlighted fields."; bad[0].focus(); return; }
+      var f = {};
+      ["name", "guests", "date", "time", "email", "phone", "notes"].forEach(function (k) { f[k] = bf.querySelector("[name=" + k + "]").value.trim(); });
+      bmsg.classList.remove("error"); bmsg.textContent = "Sending your request."; bbtn.disabled = true;
+      sendForm("Booking request: " + f.name + ", " + f.guests + " on " + f.date + " at " + f.time, f, function (viaMail) {
+        bbtn.disabled = false;
+        if (viaMail) { bmsg.textContent = "Opening your email app with the request filled in. Press send and we will confirm."; return; }
+        bf.hidden = true; var done = d.querySelector(".booking-done"); done.hidden = false; done.classList.add("in"); done.scrollIntoView({ block: "center" });
+      }, function () {
+        bbtn.disabled = false; bmsg.classList.add("error");
+        bmsg.textContent = "That did not send. Please email info@aromaclassitalian.com with your details.";
+      });
     });
   }
 })();
