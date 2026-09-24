@@ -1,112 +1,201 @@
 /**
- * Aroma Class bookings -> Google Calendar
- * Receives the website booking form, checks capacity, adds a calendar event,
- * emails the restaurant and the customer.
+ * Aroma Class bookings -> Google Calendar (hardened, v2)
+ * Receives the website booking form, validates it, checks capacity, adds a calendar event,
+ * emails the restaurant and the customer, and optionally WhatsApps the owner.
  *
- * Setup (5 minutes, from the restaurant's Google account):
- *  1. calendar.google.com: create a calendar called "Aroma Class bookings" (or use the main one).
- *  2. script.google.com > New project > delete the sample code > paste this file > save.
- *  3. Project Settings (gear icon): set Time zone to (GMT+00:00) London.
- *  4. Edit CONFIG below if needed.
- *  5. Deploy > New deployment > type "Web app" > Execute as: Me > Who has access: Anyone > Deploy.
- *     Approve the permissions (Calendar + send email as you).
- *  6. Copy the Web app URL and send it to Kyan. It goes into <body data-booking-endpoint="...">.
- * Any change to this file needs Deploy > Manage deployments > edit > New version.
+ * Setup:
+ *  1. calendar.google.com: create a calendar called "Aroma Class bookings".
+ *  2. script.google.com > project > paste this file > save.
+ *  3. Project Settings: Time zone (GMT+00:00) London.
+ *  4. Secrets go in Project Settings > Script Properties, NEVER in this file (it is in a public repo):
+ *       WHATSAPP_PHONE   e.g. +447700900123
+ *       WHATSAPP_APIKEY  the CallMeBot key
+ *  5. Deploy > Manage deployments > pencil > Version: New version > Deploy (keeps the same URL).
  */
 var CONFIG = {
-  calendarName: "Aroma Class bookings", // falls back to the main calendar if not found
+  calendarName: "Aroma Class bookings",
   restaurantEmail: "info@aromaclassitalian.com",
-  maxTablesPerSlot: 6,   // bookings allowed to overlap at the same time
-  slotMinutes: 90,       // how long a table is held in the calendar
-  autoConfirm: true,     // true: customer is told it is booked. false: told it is a request.
+  maxTablesPerSlot: 6,
+  slotMinutes: 90,
+  autoConfirm: true,
   timezone: "Europe/London",
-  // WhatsApp alert to the owner via CallMeBot (free, one recipient, unofficial).
-  // Dom registers once: on WhatsApp, message the CallMeBot number shown at
-  // https://www.callmebot.com/blog/free-api-whatsapp-messages/ with the text
-  // "I allow callmebot to send me messages" and paste the API key he gets back here.
-  // For an official channel later, swap notifyWhatsApp for the Meta WhatsApp Cloud API.
-  whatsapp: { phone: "", apikey: "" }  // phone in international format, e.g. "+447700900123"
+  maxGuests: 8,            // bigger groups are told to email
+  maxDaysAhead: 90,
+  // Opening hours per weekday (0 = Sunday). Last booking is 45 min before close.
+  hours: { 0: null, 1: [7.5, 18], 2: [7.5, 18], 3: [7.5, 18], 4: [7.5, 18], 5: [7.5, 18], 6: [7.5, 17] },
+  lastBookingBeforeCloseMin: 45,
+  // Abuse limits
+  maxPerContactPerDay: 3,  // same email or phone
+  maxPerDay: 60            // all bookings; protects the Gmail send quota (~100/day)
 };
 
 function doPost(e) {
+  var lock = LockService.getScriptLock();
   try {
-    var p = JSON.parse(e.postData.contents || "{}");
-    var required = ["name", "email", "phone", "guests", "date", "time"];
-    for (var i = 0; i < required.length; i++) {
-      if (!p[required[i]]) return out({ success: false, error: "Missing " + required[i] });
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email)) return out({ success: false, error: "Invalid email" });
+    var p = parse(e);
+    if (!p) return fail("Invalid request");
     if (String(p.website || "").length) return out({ success: true }); // honeypot: pretend, do nothing
 
-    var start = new Date(p.date + "T" + p.time + ":00");
-    if (isNaN(start.getTime())) return out({ success: false, error: "Invalid date or time" });
-    if (start.getTime() < Date.now() - 5 * 60000) return out({ success: false, error: "That time has passed" });
-    var end = new Date(start.getTime() + CONFIG.slotMinutes * 60000);
+    var b = validate(p);
+    if (b.error) return fail(b.error);
+
+    if (!lock.tryLock(10000)) return fail("Busy, please try again");
+
+    var limit = checkLimits(b);
+    if (limit) return fail(limit);
 
     var cal = getCalendar();
-    var clash = cal.getEvents(start, end).filter(function (ev) { return ev.getTitle().indexOf("Booking:") === 0; }).length;
-    if (clash >= CONFIG.maxTablesPerSlot) return out({ success: false, full: true, error: "That time is full" });
+    var end = new Date(b.start.getTime() + CONFIG.slotMinutes * 60000);
+    var taken = cal.getEvents(b.start, end).filter(function (ev) {
+      return ev.getTitle().indexOf("Booking:") === 0;
+    }).length;
+    if (taken >= CONFIG.maxTablesPerSlot) return out({ success: false, full: true, error: "That time is full" });
 
-    var guests = String(p.guests), name = String(p.name).slice(0, 80);
-    var notes = String(p.notes || "").slice(0, 500);
     var details = [
-      "Guests: " + guests, "Phone: " + p.phone, "Email: " + p.email,
-      "Notes: " + (notes || "none"), "Booked via the website"
+      "Guests: " + b.guests, "Phone: " + b.phone, "Email: " + b.email,
+      "Notes: " + (b.notes || "none"), "Booked via the website"
     ].join("\n");
-    var ev = cal.createEvent("Booking: " + name + " x" + guests, start, end, { description: details });
+    cal.createEvent("Booking: " + b.name + " x" + b.guests, b.start, end, { description: details });
+    recordLimits(b);
+    lock.releaseLock();
 
-    var when = Utilities.formatDate(start, CONFIG.timezone, "EEEE d MMMM 'at' h:mma").replace("AM", "am").replace("PM", "pm");
-    MailApp.sendEmail({
-      to: CONFIG.restaurantEmail, replyTo: p.email, name: "Aroma Class website",
-      subject: "New booking: " + name + ", " + guests + " on " + when,
-      body: details + "\n\nIt is in the " + cal.getName() + " calendar. Reply to this email to reach the customer."
+    var when = Utilities.formatDate(b.start, CONFIG.timezone, "EEEE d MMMM 'at' h:mma")
+      .replace("AM", "am").replace("PM", "pm");
+    safe(function () {
+      MailApp.sendEmail({
+        to: CONFIG.restaurantEmail, replyTo: b.email, name: "Aroma Class website",
+        subject: "New booking: " + b.name + ", " + b.guests + " on " + when,
+        body: details + "\n\nIt is in the " + cal.getName() + " calendar. Reply to reach the customer."
+      });
     });
-    var greeting = "Hi " + name.split(" ")[0] + ",\n\n";
-    var line = CONFIG.autoConfirm
-      ? "Your table for " + guests + " at Aroma Class is booked for " + when + "."
-      : "We have your request for a table for " + guests + " on " + when + ". We will confirm shortly.";
-    MailApp.sendEmail({
-      to: p.email, replyTo: CONFIG.restaurantEmail, name: "Aroma Class",
-      subject: CONFIG.autoConfirm ? "Your table at Aroma Class" : "Your booking request at Aroma Class",
-      body: greeting + line + "\n\nAroma Class, Dukes Court, Duke Street, Woking GU21 5BH.\n" +
-            "If your plans change, reply to this email.\n\nSee you soon."
+    // Customer email carries no free text from the form except the first name (links stripped).
+    safe(function () {
+      MailApp.sendEmail({
+        to: b.email, replyTo: CONFIG.restaurantEmail, name: "Aroma Class",
+        subject: CONFIG.autoConfirm ? "Your table at Aroma Class" : "Your booking request at Aroma Class",
+        body: "Hi " + b.firstName + ",\n\n" +
+          (CONFIG.autoConfirm
+            ? "Your table for " + b.guests + " at Aroma Class is booked for " + when + "."
+            : "We have your request for a table for " + b.guests + " on " + when + ". We will confirm shortly.") +
+          "\n\nAroma Class, Dukes Court, Duke Street, Woking GU21 5BH.\nIf your plans change, reply to this email.\n\nSee you soon."
+      });
     });
-    notifyWhatsApp("New booking\n" + name + " x" + guests + "\n" + when + "\nPhone " + p.phone +
-                   (notes ? "\nNotes: " + notes : "") + "\nEmail " + p.email);
-    return out({ success: true, confirmed: CONFIG.autoConfirm, eventId: ev.getId() });
+    notifyWhatsApp("New booking\n" + b.name + " x" + b.guests + "\n" + when + "\nPhone " + b.phone +
+      (b.notes ? "\nNotes: " + b.notes : "") + "\nEmail " + b.email);
+    return out({ success: true, confirmed: CONFIG.autoConfirm });
   } catch (err) {
-    return out({ success: false, error: String(err) });
+    console.error("doPost failed: " + (err && err.stack || err)); // details stay in the script logs
+    return fail("Something went wrong");
+  } finally {
+    try { lock.releaseLock(); } catch (ignore) {}
   }
 }
 
-/** WhatsApp alert. Never blocks the booking: any failure is logged and ignored. */
-function notifyWhatsApp(text) {
-  var w = CONFIG.whatsapp;
-  if (!w || !w.phone || !w.apikey) return;
+function parse(e) {
   try {
-    var url = "https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent(w.phone) +
-              "&apikey=" + encodeURIComponent(w.apikey) + "&text=" + encodeURIComponent(text);
-    UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-  } catch (err) { Logger.log("WhatsApp alert failed: " + err); }
+    var raw = e && e.postData && e.postData.contents;
+    if (!raw || raw.length > 5000) return null;
+    var p = JSON.parse(raw);
+    return p && typeof p === "object" && !Array.isArray(p) ? p : null;
+  } catch (err) { return null; }
 }
 
+/** Plain text only: no control characters, no links, no HTML, trimmed and capped. */
+function clean(v, max) {
+  return String(v == null ? "" : v)
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/(https?:\/\/|www\.)\S*/gi, "")
+    .replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function validate(p) {
+  var name = clean(p.name, 60);
+  if (name.length < 2 || !/[a-z]/i.test(name)) return { error: "Please enter your name" };
+  var email = String(p.email || "").trim().toLowerCase();
+  if (email.length > 120 || !/^[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}$/i.test(email)) return { error: "Please enter a valid email" };
+  var phone = String(p.phone || "").replace(/[^\d+]/g, "");
+  if (!/^\+?\d{9,15}$/.test(phone)) return { error: "Please enter a valid phone number" };
+  var guests = parseInt(p.guests, 10);
+  if (String(p.guests) === "9+") return { error: "For 9 or more, please email us" };
+  if (!(guests >= 1 && guests <= CONFIG.maxGuests)) return { error: "Please choose the number of guests" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.date)) || !/^\d{2}:\d{2}$/.test(String(p.time))) return { error: "Please pick a date and time" };
+
+  var start = new Date(p.date + "T" + p.time + ":00");
+  if (isNaN(start.getTime())) return { error: "Please pick a date and time" };
+  var now = Date.now();
+  if (start.getTime() < now + 30 * 60000) return { error: "Please pick a time at least 30 minutes from now" };
+  if (start.getTime() > now + CONFIG.maxDaysAhead * 86400000) return { error: "We take bookings up to " + CONFIG.maxDaysAhead + " days ahead" };
+
+  var day = parseInt(Utilities.formatDate(start, CONFIG.timezone, "u"), 10) % 7; // u: 1=Mon..7=Sun
+  var hrs = CONFIG.hours[day];
+  var hm = p.time.split(":"), t = parseInt(hm[0], 10) + parseInt(hm[1], 10) / 60;
+  if (!hrs) return { error: "We are closed that day" };
+  if (t < hrs[0] || t > hrs[1] - CONFIG.lastBookingBeforeCloseMin / 60) return { error: "That time is outside our opening hours" };
+
+  return {
+    name: name, firstName: name.split(" ")[0], email: email, phone: phone, guests: guests,
+    notes: clean(p.notes, 300), start: start
+  };
+}
+
+function checkLimits(b) {
+  var props = PropertiesService.getScriptProperties();
+  var day = Utilities.formatDate(new Date(), CONFIG.timezone, "yyyyMMdd");
+  var total = parseInt(props.getProperty("n_" + day) || "0", 10);
+  if (total >= CONFIG.maxPerDay) return "We cannot take more online bookings today. Please email us.";
+  var cache = CacheService.getScriptCache();
+  var keys = ["c_" + b.email, "c_" + b.phone];
+  for (var i = 0; i < keys.length; i++) {
+    if (parseInt(cache.get(keys[i]) || "0", 10) >= CONFIG.maxPerContactPerDay) {
+      return "You have made several bookings today. Please email us to change one.";
+    }
+  }
+  return null;
+}
+
+function recordLimits(b) {
+  var props = PropertiesService.getScriptProperties();
+  var day = Utilities.formatDate(new Date(), CONFIG.timezone, "yyyyMMdd");
+  props.setProperty("n_" + day, String(parseInt(props.getProperty("n_" + day) || "0", 10) + 1));
+  var cache = CacheService.getScriptCache();
+  ["c_" + b.email, "c_" + b.phone].forEach(function (k) {
+    cache.put(k, String(parseInt(cache.get(k) || "0", 10) + 1), 21600); // 6 hours, the cache maximum
+  });
+}
+
+/** WhatsApp alert via CallMeBot. Secrets come from Script Properties. Never blocks the booking. */
+function notifyWhatsApp(text) {
+  var props = PropertiesService.getScriptProperties();
+  var phone = props.getProperty("WHATSAPP_PHONE"), key = props.getProperty("WHATSAPP_APIKEY");
+  if (!phone || !key) return;
+  safe(function () {
+    UrlFetchApp.fetch("https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent(phone) +
+      "&apikey=" + encodeURIComponent(key) + "&text=" + encodeURIComponent(text), { muteHttpExceptions: true });
+  });
+}
+
+function safe(fn) { try { fn(); } catch (err) { console.error(String(err && err.stack || err)); } }
+function fail(msg) { return out({ success: false, error: msg }); }
 function doGet() { return out({ ok: true, service: "Aroma Class bookings" }); }
 
 function getCalendar() {
   var found = CalendarApp.getCalendarsByName(CONFIG.calendarName);
-  return found.length ? found[0] : CalendarApp.getDefaultCalendar();
+  if (!found.length) throw new Error("Calendar '" + CONFIG.calendarName + "' not found");
+  return found[0];
 }
 
 function out(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** Run this once from the editor to check permissions and see a test event appear. */
+/** Run once from the editor: books a table for 2 tomorrow at 1pm in your own name. */
 function testBooking() {
-  var tomorrow = new Date(Date.now() + 86400000);
+  var t = new Date(Date.now() + 86400000);
+  if (Utilities.formatDate(t, CONFIG.timezone, "u") === "7") t = new Date(t.getTime() + 86400000);
   var res = doPost({ postData: { contents: JSON.stringify({
-    name: "Test Booking", email: Session.getActiveUser().getEmail(), phone: "07000 000000",
-    guests: "2", date: Utilities.formatDate(tomorrow, CONFIG.timezone, "yyyy-MM-dd"), time: "13:00", notes: "test from the script editor"
+    name: "Test Booking", email: Session.getActiveUser().getEmail(), phone: "07000000000",
+    guests: "2", date: Utilities.formatDate(t, CONFIG.timezone, "yyyy-MM-dd"), time: "13:00", notes: "test"
   }) } });
   Logger.log(res.getContent());
 }

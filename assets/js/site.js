@@ -176,6 +176,7 @@
       if (bad.length) { bmsg.classList.add("error"); bmsg.textContent = "Please fill in the highlighted fields."; bad[0].focus(); return; }
       var f = {};
       ["name", "guests", "date", "time", "email", "phone", "notes"].forEach(function (k) { f[k] = bf.querySelector("[name=" + k + "]").value.trim(); });
+      f.website = bf.querySelector("[name=website]").value;
       bmsg.classList.remove("error"); bmsg.textContent = "Sending your request."; bbtn.disabled = true;
       var ENDPOINT = (d.body.getAttribute("data-booking-endpoint") || "").trim();
       var onSent = function (viaMail) {
@@ -194,6 +195,7 @@
           .then(function (j) {
             if (j.success) { onSent(false); return; }
             if (j.full) { bbtn.disabled = false; bmsg.classList.add("error"); bmsg.textContent = "That time is full. Please pick another time."; timeEl.focus(); return; }
+            if (j.error && j.error !== "Something went wrong") { bbtn.disabled = false; bmsg.classList.add("error"); bmsg.textContent = j.error; return; }
             onFail();
           }).catch(onFail);
         return;
