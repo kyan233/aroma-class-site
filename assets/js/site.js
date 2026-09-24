@@ -45,7 +45,7 @@
   /* Opening hours: live status in Europe/London
      0 = Sunday. Times are decimal hours. Sunday closed. */
   /* MUST match CONFIG.hours in integrations/google-calendar/Code.gs */
-  var HOURS = { 1: [7.5, 18], 2: [7.5, 18], 3: [7.5, 18], 4: [7.5, 18], 5: [7.5, 18], 6: [7.5, 17], 0: null };
+  var HOURS = { 1: [7.5, 19], 2: [7.5, 19], 3: [7.5, 19], 4: [7.5, 19], 5: [7.5, 19], 6: [7.5, 19], 0: null };
   var DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   function londonNow() {
@@ -150,7 +150,7 @@
   if (bf) {
     var dateEl = bf.querySelector("[name=date]"), timeEl = bf.querySelector("[name=time]");
     var bmsg = bf.querySelector(".form-msg"), bbtn = bf.querySelector("button[type=submit]");
-    var LAST_BEFORE_CLOSE = 1, NOTICE_MIN = 30, DAYS_AHEAD = 90;
+    var LAST_BEFORE_CLOSE = 1, NOTICE_MIN = 30, DAYS_AHEAD = 90, BOOK_FROM = 12;
     var CLOSED_DATES = ["2026-12-25", "2026-12-26", "2027-01-01"];
     /* Today's date in London, whatever the visitor's own time zone */
     var todayLondon = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
@@ -170,7 +170,7 @@
       if (!hrs) { timeEl.disabled = true; timeEl.add(new Option(dt.getDay() === 0 ? "We are closed on Sundays" : "We are closed that day", "")); return; }
       var count = 0;
       timeEl.add(new Option("Choose", ""));
-      for (var t = hrs[0]; t <= hrs[1] - LAST_BEFORE_CLOSE + 1e-9; t += 0.25) {
+      for (var t = Math.max(hrs[0], BOOK_FROM); t <= hrs[1] - LAST_BEFORE_CLOSE + 1e-9; t += 0.25) {
         if (t < earliest) continue;
         count++;
         var h = Math.floor(t), m = Math.round((t - h) * 60);

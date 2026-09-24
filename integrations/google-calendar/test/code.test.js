@@ -89,7 +89,8 @@ t("Sunday, out of hours, past and far future rejected", () => {
   const e = makeEnv();
   assert.strictEqual(post(e, good({ date: nextSunday() })).success, false);
   assert.strictEqual(post(e, good({ time: "03:00" })).success, false);
-  assert.strictEqual(post(e, good({ time: "17:30" })).success, false);
+  assert.strictEqual(post(e, good({ time: "18:15" })).success, false);
+  assert.strictEqual(post(e, good({ time: "09:00" })).success, false);
   assert.strictEqual(post(e, good({ date: "2020-01-01" })).success, false);
   assert.strictEqual(post(e, good({ date: "2030-01-01" })).success, false);
   assert.strictEqual(e.events.length, 0);
@@ -101,7 +102,7 @@ t("slot fills at 6 tables", () => {
   assert.strictEqual(r.full, true); assert.strictEqual(e.events.length, 6);
 });
 t("same contact capped at 3 per day", () => {
-  const e = makeEnv(); const times = ["09:00", "11:00", "13:00", "15:00"];
+  const e = makeEnv(); const times = ["12:00", "14:00", "16:00", "17:30"];
   const rs = times.map(time => post(e, good({ time })));
   assert.deepStrictEqual(rs.map(r => r.success), [true, true, true, false]);
 });
@@ -118,7 +119,7 @@ t("WhatsApp only fires when both secrets are set in Script Properties", () => {
 });
 
 // ---------- opening-hours boundary suite ----------
-const HOURS = { 0: null, 1: [7.5, 18], 2: [7.5, 18], 3: [7.5, 18], 4: [7.5, 18], 5: [7.5, 18], 6: [7.5, 17] };
+const HOURS = { 0: null, 1: [7.5, 19], 2: [7.5, 19], 3: [7.5, 19], 4: [7.5, 19], 5: [7.5, 19], 6: [7.5, 19] }; const BOOK_FROM = 12;
 const londonParts = d => Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/London",hourCycle:"h23",hour:"2-digit",minute:"2-digit"}).formatToParts(d).map(x=>[x.type,x.value]));
 function daysFrom(n, count) { const out = []; for (let i = n; i < n + count; i++) { const d = new Date(Date.now() + i * 86400000); out.push(new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/London"}).format(d)); } return out; }
 
@@ -128,7 +129,7 @@ t("every 15-min slot on 7 consecutive days: accepted only inside hours, event ne
     const dow = new Date(date + "T12:00:00Z").getUTCDay(), hrs = HOURS[dow];
     for (let h = 0; h < 24; h++) for (const m of [0, 15, 30, 45]) {
       const time = String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"), tt = h + m / 60;
-      const shouldAccept = !!hrs && tt >= hrs[0] && tt <= hrs[1] - 1;
+      const shouldAccept = !!hrs && tt >= Math.max(hrs[0], BOOK_FROM) && tt <= hrs[1] - 1;
       const e = makeEnv(); const r = post(e, good({ date, time }));
       assert.strictEqual(r.success, shouldAccept, `${date} (dow ${dow}) ${time}: expected ${shouldAccept}, got ${JSON.stringify(r)}`);
       if (r.success) {
@@ -154,9 +155,9 @@ t("closed dates (Christmas) rejected even inside normal hours", () => {
   const r = post(makeEnv(), good({ date: "2026-12-25", time: "12:00" })); assert.strictEqual(r.success, false);
 });
 t("clocks-change week (26 Oct 2026) stays in London hours", () => {
-  const e = makeEnv(); const r = post(e, good({ date: "2026-10-26", time: "07:30" })); assert.strictEqual(r.success, true, JSON.stringify(r));
-  const p = londonParts(e.events[0].start); assert.strictEqual(p.hour + ":" + p.minute, "07:30");
-  assert.strictEqual(post(makeEnv(), good({ date: "2026-10-26", time: "07:15" })).success, false);
+  const e = makeEnv(); const r = post(e, good({ date: "2026-10-26", time: "12:00" })); assert.strictEqual(r.success, true, JSON.stringify(r));
+  const p = londonParts(e.events[0].start); assert.strictEqual(p.hour + ":" + p.minute, "12:00");
+  assert.strictEqual(post(makeEnv(), good({ date: "2026-10-26", time: "11:45" })).success, false);
 });
 t("booking under 30 minutes from now rejected", () => {
   const now = new Date(Date.now() + 10 * 60000);
