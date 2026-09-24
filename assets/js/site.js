@@ -180,6 +180,9 @@
       if (count === 0) { timeEl.innerHTML = ""; timeEl.add(new Option("No times left today", "")); }
     }
     dateEl.addEventListener("change", fillTimes); fillTimes();
+    /* new details = new booking attempt */
+    bf.addEventListener("input", function () { delete bf.dataset.ref; });
+    bf.addEventListener("change", function () { delete bf.dataset.ref; });
 
     /* Cloudflare Turnstile: only loads when a site key is set on <body data-turnstile-sitekey> */
     var SITEKEY = (d.body.getAttribute("data-turnstile-sitekey") || "").trim();
@@ -212,6 +215,12 @@
       var f = {};
       ["name", "guests", "date", "time", "email", "phone", "notes"].forEach(function (k) { f[k] = bf.querySelector("[name=" + k + "]").value.trim(); });
       f.website = bf.querySelector("[name=website]").value;
+      /* one reference per booking attempt: lets us check the result and stops double bookings */
+      if (!bf.dataset.ref) {
+        var rnd = new Uint8Array(12); (window.crypto || window.msCrypto).getRandomValues(rnd);
+        bf.dataset.ref = Array.prototype.map.call(rnd, function (x) { return ("0" + x.toString(16)).slice(-2); }).join("");
+      }
+      f.ref = bf.dataset.ref;
       bmsg.classList.remove("error"); bmsg.textContent = "";
       var waited = 0;
       var go = function () {
@@ -227,7 +236,15 @@
         setBusy(false);
         if (viaMail) { bmsg.textContent = "Opening your email app with the request filled in. Press send and we will confirm."; return; }
         try { sessionStorage.setItem("aroma-booking", JSON.stringify({ name: f.name, guests: f.guests, date: f.date, time: f.time, email: f.email })); } catch (err) {}
+        delete bf.dataset.ref;
         window.location.href = "booking-confirmed.html";
+      };
+      var checkRef = function (ref, tries) {
+        return new Promise(function (res) { setTimeout(res, 1500); })
+          .then(function () { return fetch(ENDPOINT + "?ref=" + encodeURIComponent(ref)); })
+          .then(function (r) { return r.json(); })
+          .then(function (j) { return j.found ? { success: true } : { success: false, error: "Something went wrong" }; })
+          .catch(function () { if (tries > 1) return checkRef(ref, tries - 1); throw new Error("unknown"); });
       };
       var onFail = function () {
         setBusy(false); capReset(); bmsg.classList.add("error");
@@ -237,6 +254,7 @@
         /* Google Apps Script: plain-text body avoids a CORS preflight it cannot answer */
         fetch(ENDPOINT, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(f) })
           .then(function (r) { return r.json(); })
+          .catch(function () { return checkRef(f.ref, 5); }) /* reply garbled: ask whether it went through */
           .then(function (j) {
             if (j.success) { onSent(false); return; }
             if (j.full) { setBusy(false); bmsg.classList.add("error"); bmsg.textContent = "That time is full. Please pick another time."; timeEl.focus(); return; }

@@ -44,11 +44,17 @@ function doPost(e) {
     if (!p) return fail("Invalid request");
     if (String(p.website || "").length) return out({ success: true }); // honeypot: pretend, do nothing
 
+    var ref = validRef(p.ref);
+    if (ref) {
+      var prior = CacheService.getScriptCache().get("ref_" + ref);
+      if (prior) return out({ success: true, confirmed: CONFIG.autoConfirm, repeat: true }); // same booking sent twice
+    }
     var b = validate(p);
     if (b.error) return fail(b.error);
     if (!verifyHuman(p.turnstile)) return fail("Please tick the box to show you are not a robot, then try again");
 
     if (!lock.tryLock(10000)) return fail("Busy, please try again");
+    if (ref && CacheService.getScriptCache().get("ref_" + ref)) return out({ success: true, confirmed: CONFIG.autoConfirm, repeat: true });
 
     var limit = checkLimits(b);
     if (limit) return fail(limit);
@@ -66,6 +72,7 @@ function doPost(e) {
     ].join("\n");
     cal.createEvent("Booking: " + b.name + " x" + b.guests, b.start, end, { description: details });
     recordLimits(b);
+    if (ref) CacheService.getScriptCache().put("ref_" + ref, "1", 21600);
     lock.releaseLock();
 
     var when = Utilities.formatDate(b.start, CONFIG.timezone, "EEEE d MMMM 'at' h:mma")
@@ -212,7 +219,14 @@ function notifyWhatsApp(text) {
 function fmtHM(h) { var H = Math.floor(h), M = Math.round((h - H) * 60); return (H < 10 ? "0" : "") + H + ":" + (M < 10 ? "0" : "") + M; }
 function safe(fn) { try { fn(); } catch (err) { console.error(String(err && err.stack || err)); } }
 function fail(msg) { return out({ success: false, error: msg }); }
-function doGet() { return out({ ok: true, service: "Aroma Class bookings" }); }
+/** GET ?ref=... tells the website whether a booking with that reference went through. */
+function doGet(e) {
+  var ref = validRef(e && e.parameter && e.parameter.ref);
+  if (ref) return out({ ok: true, found: !!CacheService.getScriptCache().get("ref_" + ref) });
+  return out({ ok: true, service: "Aroma Class bookings" });
+}
+
+function validRef(r) { return (typeof r === "string" && /^[a-z0-9]{16,40}$/i.test(r)) ? r : null; }
 
 function getCalendar() {
   var found = CalendarApp.getCalendarsByName(CONFIG.calendarName);

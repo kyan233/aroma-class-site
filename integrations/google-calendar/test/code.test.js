@@ -34,7 +34,7 @@ function makeEnv() {
     Session: { getActiveUser: () => ({ getEmail: () => "me@example.com" }) },
     Logger: { log() {} }, console: { error() {} }
   };
-  const fn = new Function(...Object.keys(env), src + "\nreturn { doPost, validate, clean };");
+  const fn = new Function(...Object.keys(env), src + "\nreturn { doPost, doGet, validate, clean };");
   const out = { api: null, events, mails, fetches, props, setVerify: v => { env.__verify = v; } };
   out.api = fn(...Object.values(env)); return out;
 }
@@ -191,5 +191,23 @@ t("secret set, valid token from our site: booked, secret sent to Cloudflare not 
 t("Cloudflare unreachable: fails closed", () => {
   const e = makeEnv(); e.props.TURNSTILE_SECRET = "s"; e.setVerify(() => { throw new Error("down"); });
   assert.strictEqual(post(e, good({ turnstile: "tok" })).success, false);
+});
+// ---------- booking reference ----------
+t("same reference sent twice books once, second reply still says success", () => {
+  const e = makeEnv(); const ref = "a1b2c3d4e5f6a7b8c9d0e1f2";
+  const r1 = post(e, good({ ref })), r2 = post(e, good({ ref }));
+  assert.strictEqual(r1.success, true); assert.strictEqual(r2.success, true);
+  assert.strictEqual(e.events.length, 1); assert.strictEqual(e.mails.length, 2);
+});
+t("GET ?ref reports whether a booking went through", () => {
+  const e = makeEnv(); const ref = "ffeeddccbbaa99887766554433";
+  const q = r => JSON.parse(e.api.doGet({ parameter: { ref: r } }).getContent());
+  assert.strictEqual(q(ref).found, false); post(e, good({ ref })); assert.strictEqual(q(ref).found, true);
+  assert.strictEqual(q("not a ref!").found, undefined);
+});
+t("rejected booking does not mark its reference as booked", () => {
+  const e = makeEnv(); const ref = "0011223344556677889900aa";
+  post(e, good({ ref, time: "09:00" }));
+  assert.strictEqual(JSON.parse(e.api.doGet({ parameter: { ref } }).getContent()).found, false);
 });
 console.log(`\n${passed} passed`);
