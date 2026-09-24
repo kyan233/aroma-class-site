@@ -174,7 +174,7 @@
         if (t < earliest) continue;
         count++;
         var h = Math.floor(t), m = Math.round((t - h) * 60);
-        timeEl.add(new Option(fmt(t), pad(h) + ":" + pad(m)));
+        timeEl.add(new Option(((h % 12) || 12) + ":" + pad(m) + (h >= 12 ? "pm" : "am"), pad(h) + ":" + pad(m)));
       }
       timeEl.disabled = count === 0;
       if (count === 0) { timeEl.innerHTML = ""; timeEl.add(new Option("No times left today", "")); }
