@@ -10,6 +10,7 @@
  *  4. Secrets go in Project Settings > Script Properties, NEVER in this file (it is in a public repo):
  *       WHATSAPP_PHONE   e.g. +447700900123
  *       WHATSAPP_APIKEY  the CallMeBot key
+ *       TURNSTILE_SECRET Cloudflare Turnstile secret key. When set, every booking must pass the check.
  *  5. Deploy > Manage deployments > pencil > Version: New version > Deploy (keeps the same URL).
  */
 var CONFIG = {
@@ -31,7 +32,9 @@ var CONFIG = {
   closedDates: ["2026-12-25", "2026-12-26", "2027-01-01"],
   // Abuse limits
   maxPerContactPerDay: 3,  // same email or phone
-  maxPerDay: 60            // all bookings; protects the Gmail send quota (~100/day)
+  maxPerDay: 60,           // all bookings; protects the Gmail send quota (~100/day)
+  // Turnstile tokens must come from these sites (add the real domain when it moves off GitHub).
+  allowedHostnames: ["kyan233.github.io", "aromaclassitalian.com", "www.aromaclassitalian.com"]
 };
 
 function doPost(e) {
@@ -43,6 +46,7 @@ function doPost(e) {
 
     var b = validate(p);
     if (b.error) return fail(b.error);
+    if (!verifyHuman(p.turnstile)) return fail("Please tick the box to show you are not a robot, then try again");
 
     if (!lock.tryLock(10000)) return fail("Busy, please try again");
 
@@ -150,6 +154,23 @@ function validate(p) {
     name: name, firstName: name.split(" ")[0], email: email, phone: phone, guests: guests,
     notes: clean(p.notes, 300), start: start, end: end
   };
+}
+
+/** Cloudflare Turnstile check. Off until TURNSTILE_SECRET is set in Script Properties. */
+function verifyHuman(token) {
+  var secret = PropertiesService.getScriptProperties().getProperty("TURNSTILE_SECRET");
+  if (!secret) return true;
+  if (!token || typeof token !== "string" || token.length > 2048) return false;
+  try {
+    var res = UrlFetchApp.fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "post", payload: { secret: secret, response: token }, muteHttpExceptions: true
+    });
+    var j = JSON.parse(res.getContentText());
+    return j.success === true && CONFIG.allowedHostnames.indexOf(j.hostname) !== -1;
+  } catch (err) {
+    console.error("Turnstile check failed: " + err);
+    return false; // fail closed: if we cannot check, do not book
+  }
 }
 
 function checkLimits(b) {

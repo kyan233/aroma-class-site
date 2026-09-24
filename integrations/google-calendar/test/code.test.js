@@ -23,7 +23,7 @@ function makeEnv() {
     CacheService: { getScriptCache: () => ({ get: k => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
     CalendarApp: { getCalendarsByName: () => [cal] },
     MailApp: { sendEmail: m => mails.push(m) },
-    UrlFetchApp: { fetch: u => fetches.push(u) },
+    UrlFetchApp: { fetch: (u, o) => { fetches.push(u); const v = env.__verify || { success: true, hostname: "kyan233.github.io" }; return { getContentText: () => JSON.stringify(typeof v === "function" ? v(o) : v) }; } },
     Utilities: { formatDate: fmt, parseDate: (str, tz) => {
       const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(str); if (!m) return null;
       const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
@@ -35,7 +35,8 @@ function makeEnv() {
     Logger: { log() {} }, console: { error() {} }
   };
   const fn = new Function(...Object.keys(env), src + "\nreturn { doPost, validate, clean };");
-  return { api: fn(...Object.values(env)), events, mails, fetches, props };
+  const out = { api: null, events, mails, fetches, props, setVerify: v => { env.__verify = v; } };
+  out.api = fn(...Object.values(env)); return out;
 }
 
 // next weekday (Mon-Fri) at least 2 days ahead, as yyyy-mm-dd in London
@@ -164,5 +165,31 @@ t("booking under 30 minutes from now rejected", () => {
   const date = new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/London"}).format(now), p = londonParts(now);
   const time = p.hour + ":" + String(Math.floor(+p.minute / 15) * 15).padStart(2, "0");
   assert.strictEqual(post(makeEnv(), good({ date, time })).success, false);
+});
+// ---------- Turnstile ----------
+t("no Turnstile secret set: bookings work without a token (safe rollout)", () => {
+  const e = makeEnv(); assert.strictEqual(post(e, good()).success, true);
+});
+t("secret set, no token: rejected, nothing booked", () => {
+  const e = makeEnv(); e.props.TURNSTILE_SECRET = "s"; const r = post(e, good());
+  assert.strictEqual(r.success, false); assert.strictEqual(e.events.length, 0); assert.strictEqual(e.mails.length, 0);
+});
+t("secret set, token Cloudflare rejects: rejected", () => {
+  const e = makeEnv(); e.props.TURNSTILE_SECRET = "s"; e.setVerify({ success: false });
+  assert.strictEqual(post(e, good({ turnstile: "bad" })).success, false); assert.strictEqual(e.events.length, 0);
+});
+t("secret set, valid token from another website: rejected", () => {
+  const e = makeEnv(); e.props.TURNSTILE_SECRET = "s"; e.setVerify({ success: true, hostname: "evil.example" });
+  assert.strictEqual(post(e, good({ turnstile: "tok" })).success, false);
+});
+t("secret set, valid token from our site: booked, secret sent to Cloudflare not the browser", () => {
+  const e = makeEnv(); e.props.TURNSTILE_SECRET = "s3cr3t"; let seen = null; e.setVerify(o => { seen = o.payload; return { success: true, hostname: "kyan233.github.io" }; });
+  const r = post(e, good({ turnstile: "tok" }));
+  assert.strictEqual(r.success, true); assert.strictEqual(seen.secret, "s3cr3t"); assert.strictEqual(seen.response, "tok");
+  assert.ok(!JSON.stringify(r).includes("s3cr3t"));
+});
+t("Cloudflare unreachable: fails closed", () => {
+  const e = makeEnv(); e.props.TURNSTILE_SECRET = "s"; e.setVerify(() => { throw new Error("down"); });
+  assert.strictEqual(post(e, good({ turnstile: "tok" })).success, false);
 });
 console.log(`\n${passed} passed`);

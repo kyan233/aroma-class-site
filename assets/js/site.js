@@ -180,6 +180,20 @@
       if (count === 0) { timeEl.innerHTML = ""; timeEl.add(new Option("No times left today", "")); }
     }
     dateEl.addEventListener("change", fillTimes); fillTimes();
+
+    /* Cloudflare Turnstile: only loads when a site key is set on <body data-turnstile-sitekey> */
+    var SITEKEY = (d.body.getAttribute("data-turnstile-sitekey") || "").trim();
+    var capBox = bf.querySelector("[data-captcha]"), capId = null;
+    if (SITEKEY && capBox) {
+      window.onTurnstileReady = function () {
+        capId = window.turnstile.render(capBox, { sitekey: SITEKEY, theme: "dark", appearance: "interaction-only" });
+      };
+      var sc = d.createElement("script");
+      sc.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileReady&render=explicit";
+      sc.async = true; sc.defer = true; d.head.appendChild(sc);
+    }
+    var capToken = function () { return (SITEKEY && window.turnstile && capId !== null) ? (window.turnstile.getResponse(capId) || "") : ""; };
+    var capReset = function () { if (SITEKEY && window.turnstile && capId !== null) window.turnstile.reset(capId); };
     bf.addEventListener("submit", function (e) {
       e.preventDefault();
       if (bf.querySelector(".hp").value) return;
@@ -192,6 +206,8 @@
       var f = {};
       ["name", "guests", "date", "time", "email", "phone", "notes"].forEach(function (k) { f[k] = bf.querySelector("[name=" + k + "]").value.trim(); });
       f.website = bf.querySelector("[name=website]").value;
+      f.turnstile = capToken();
+      if (SITEKEY && !f.turnstile) { bmsg.classList.add("error"); bmsg.textContent = "One moment, checking you are not a robot. Try again in a few seconds."; return; }
       bmsg.classList.remove("error"); bmsg.textContent = "Sending your request."; bbtn.disabled = true;
       var ENDPOINT = (d.body.getAttribute("data-booking-endpoint") || "").trim();
       var onSent = function (viaMail) {
@@ -210,6 +226,7 @@
           .then(function (j) {
             if (j.success) { onSent(false); return; }
             if (j.full) { bbtn.disabled = false; bmsg.classList.add("error"); bmsg.textContent = "That time is full. Please pick another time."; timeEl.focus(); return; }
+            capReset();
             if (j.error && j.error !== "Something went wrong") { bbtn.disabled = false; bmsg.classList.add("error"); bmsg.textContent = j.error; return; }
             onFail();
           }).catch(onFail);

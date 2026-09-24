@@ -305,6 +305,8 @@ ul{list-style:none}
 .f select:disabled{color:var(--ink-3)}
 .f .invalid{border-color:#e0907f}
 .f textarea{resize:vertical}
+.captcha{margin-top:20px;min-height:0}
+.captcha:empty{display:none}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 .booking .form-msg{margin:16px 0 12px}
 .booking-aside .hours-rows{margin-top:24px}
