@@ -177,14 +177,28 @@
       var f = {};
       ["name", "guests", "date", "time", "email", "phone", "notes"].forEach(function (k) { f[k] = bf.querySelector("[name=" + k + "]").value.trim(); });
       bmsg.classList.remove("error"); bmsg.textContent = "Sending your request."; bbtn.disabled = true;
-      sendForm("Booking request: " + f.name + ", " + f.guests + " on " + f.date + " at " + f.time, f, function (viaMail) {
+      var ENDPOINT = (d.body.getAttribute("data-booking-endpoint") || "").trim();
+      var onSent = function (viaMail) {
         bbtn.disabled = false;
         if (viaMail) { bmsg.textContent = "Opening your email app with the request filled in. Press send and we will confirm."; return; }
         bf.hidden = true; var done = d.querySelector(".booking-done"); done.hidden = false; done.classList.add("in"); done.scrollIntoView({ block: "center" });
-      }, function () {
+      };
+      var onFail = function () {
         bbtn.disabled = false; bmsg.classList.add("error");
         bmsg.textContent = "That did not send. Please email info@aromaclassitalian.com with your details.";
-      });
+      };
+      if (ENDPOINT) {
+        /* Google Apps Script: plain-text body avoids a CORS preflight it cannot answer */
+        fetch(ENDPOINT, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(f) })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (j.success) { onSent(false); return; }
+            if (j.full) { bbtn.disabled = false; bmsg.classList.add("error"); bmsg.textContent = "That time is full. Please pick another time."; timeEl.focus(); return; }
+            onFail();
+          }).catch(onFail);
+        return;
+      }
+      sendForm("Booking request: " + f.name + ", " + f.guests + " on " + f.date + " at " + f.time, f, onSent, onFail);
     });
   }
 })();
